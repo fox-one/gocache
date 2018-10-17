@@ -10,18 +10,6 @@ type Cachable interface {
 	CacheKey() (string, error)
 }
 
-type CacheExpire interface {
-	CacheExpire() int64
-}
-
-type CacheCoder interface {
-	CacheCoder() Coder
-}
-
-type CacheSubkeys interface {
-	CacheSubkeys() []string
-}
-
 type Coder interface {
 	Marshal(v interface{}) ([]byte, error)
 	Unmarshal(data []byte, v interface{}) error
@@ -71,20 +59,32 @@ func New(store Store, defaultCoder Coder) *Cache {
 	}
 }
 
+type cacheCoder interface {
+	CacheCoder() Coder
+}
+
 func (c *Cache) cacheCoder(x Cachable) Coder {
-	if coder, ok := x.(CacheCoder); ok {
+	if coder, ok := x.(cacheCoder); ok {
 		return coder.CacheCoder()
 	}
 
 	return c.coder
 }
 
+type cacheSubkeyer interface {
+	CacheSubkeys() []string
+}
+
 func (c *Cache) cacheSubkeys(x Cachable) []string {
-	if sub, ok := x.(CacheSubkeys); ok {
+	if sub, ok := x.(cacheSubkeyer); ok {
 		return sub.CacheSubkeys()
 	}
 
 	return nil
+}
+
+type cacheExpirer interface {
+	CacheExpire() int64
 }
 
 func (c *Cache) cacheExpire(x Cachable, expires ...int64) int64 {
@@ -92,7 +92,7 @@ func (c *Cache) cacheExpire(x Cachable, expires ...int64) int64 {
 		return expires[0]
 	}
 
-	if ex, ok := x.(CacheExpire); ok {
+	if ex, ok := x.(cacheExpirer); ok {
 		return ex.CacheExpire()
 	}
 
