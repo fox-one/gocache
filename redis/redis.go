@@ -10,6 +10,10 @@ type store struct {
 }
 
 func NewStoreWithPool(pool *redis.Pool) gocache.Store {
+	if pool == nil {
+		panic("pool is nil")
+	}
+
 	return &store{pool: pool}
 }
 
