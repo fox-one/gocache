@@ -46,6 +46,9 @@ type Store interface {
 	Exists(key string) (bool, error)
 }
 
+// errors
+var ErrCacheMiss = fmt.Errorf("cache miss")
+
 type Cache struct {
 	store Store
 	// default coder used when no coder is specified
@@ -59,12 +62,43 @@ func New(store Store, defaultCoder Coder) *Cache {
 	}
 }
 
+func (c *Cache) Write(key string, v interface{}, expires ...int64) error {
+	data, err := c.coder.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	var exoire int64 = 0
+	if len(expires) > 0 {
+		exoire = expires[0]
+	}
+
+	return c.store.Save(Pairs{key: data}, exoire)
+}
+
+func (c *Cache) Read(key string, v interface{}) error {
+	pairs, err := c.store.Get(key)
+	if err != nil {
+		return err
+	}
+
+	data, ok := pairs.Get(key)
+	if !ok {
+		return ErrCacheMiss
+	}
+
+	err = c.coder.Unmarshal(data, v)
+	return err
+}
+
+// cachable
+
 type cacheCoder interface {
 	CacheCoder() Coder
 }
 
-func (c *Cache) cacheCoder(x Cachable) Coder {
-	if coder, ok := x.(cacheCoder); ok {
+func (c *Cache) cacheCoder(v Cachable) Coder {
+	if coder, ok := v.(cacheCoder); ok {
 		return coder.CacheCoder()
 	}
 
@@ -75,8 +109,8 @@ type cacheSubkeyer interface {
 	CacheSubkeys() []string
 }
 
-func (c *Cache) cacheSubkeys(x Cachable) []string {
-	if sub, ok := x.(cacheSubkeyer); ok {
+func (c *Cache) cacheSubkeys(v Cachable) []string {
+	if sub, ok := v.(cacheSubkeyer); ok {
 		return sub.CacheSubkeys()
 	}
 
@@ -87,46 +121,46 @@ type cacheExpirer interface {
 	CacheExpire() int64
 }
 
-func (c *Cache) cacheExpire(x Cachable, expires ...int64) int64 {
+func (c *Cache) cacheExpire(v Cachable, expires ...int64) int64 {
 	if len(expires) > 0 {
 		return expires[0]
 	}
 
-	if ex, ok := x.(cacheExpirer); ok {
+	if ex, ok := v.(cacheExpirer); ok {
 		return ex.CacheExpire()
 	}
 
 	return 0
 }
 
-func (c *Cache) Save(x Cachable, expires ...int64) error {
-	key, err := x.CacheKey()
+func (c *Cache) Save(v Cachable, expires ...int64) error {
+	key, err := v.CacheKey()
 	if err != nil {
 		return errors.Wrap(err, "primary key is invalid")
 	}
 
-	coder := c.cacheCoder(x)
-	data, err := coder.Marshal(x)
+	coder := c.cacheCoder(v)
+	data, err := coder.Marshal(v)
 	if err != nil {
 		return errors.Wrap(err, "marshal failed")
 	}
 
 	pairs := Pairs{key: data}
-	if subkeys := c.cacheSubkeys(x); len(subkeys) > 0 {
+	if subkeys := c.cacheSubkeys(v); len(subkeys) > 0 {
 		keyData := []byte(key)
 		for _, subkey := range subkeys {
 			pairs.Set(subkey, keyData)
 		}
 	}
 
-	if err := c.store.Save(pairs, c.cacheExpire(x, expires...)); err != nil {
+	if err := c.store.Save(pairs, c.cacheExpire(v, expires...)); err != nil {
 		return errors.Wrap(err, "save data failed")
 	}
 
 	return nil
 }
 
-func getPrimaryKey(pairs Pairs) string {
+func dumpPrimaryKey(pairs Pairs) string {
 	for _, v := range pairs {
 		if len(v) > 0 {
 			return string(v)
@@ -136,10 +170,10 @@ func getPrimaryKey(pairs Pairs) string {
 	return ""
 }
 
-func (c *Cache) Load(x Cachable) error {
-	key, err := x.CacheKey()
+func (c *Cache) Load(v Cachable) error {
+	key, err := v.CacheKey()
 	if err != nil {
-		subkeys := c.cacheSubkeys(x)
+		subkeys := c.cacheSubkeys(v)
 		if len(subkeys) == 0 {
 			return fmt.Errorf("key is not available neither primary key nor subkeys")
 		}
@@ -149,8 +183,8 @@ func (c *Cache) Load(x Cachable) error {
 			return errors.Wrap(err, "load key from subkeys failed")
 		}
 
-		if key = getPrimaryKey(pairs); len(key) == 0 {
-			return CacheMiss
+		if key = dumpPrimaryKey(pairs); len(key) == 0 {
+			return ErrCacheMiss
 		}
 	}
 
@@ -160,26 +194,23 @@ func (c *Cache) Load(x Cachable) error {
 	}
 
 	if data, ok := pairs.Get(key); ok {
-		coder := c.cacheCoder(x)
-		if err := coder.Unmarshal(data, x); err != nil {
+		coder := c.cacheCoder(v)
+		if err := coder.Unmarshal(data, v); err != nil {
 			return errors.Wrap(err, "unmarshal data failed")
 		}
 
 		return nil
 	}
 
-	return CacheMiss
+	return ErrCacheMiss
 }
 
-func (c *Cache) Clean(x Cachable) error {
-	key, err := x.CacheKey()
+func (c *Cache) Clean(v Cachable) error {
+	key, err := v.CacheKey()
 	if err != nil {
 		return errors.Wrap(err, "primary key is invalid")
 	}
 
-	keys := append(c.cacheSubkeys(x), key)
+	keys := append(c.cacheSubkeys(v), key)
 	return c.store.Delete(keys...)
 }
-
-// errors
-var CacheMiss = fmt.Errorf("cache miss")

@@ -73,7 +73,7 @@ func Save(t *testing.T, store gocache.Store, coder gocache.Coder) {
 		return
 	}
 
-	if err := c.Load(&User{Email: u.Email}); !assert.Equal(t, gocache.CacheMiss, err) {
+	if err := c.Load(&User{Email: u.Email}); !assert.Equal(t, gocache.ErrCacheMiss, err) {
 		return
 	}
 
