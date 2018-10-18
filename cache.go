@@ -1,14 +1,8 @@
 package gocache
 
 import (
-	"fmt"
-
-	"github.com/pkg/errors"
+	"errors"
 )
-
-type Cachable interface {
-	CacheKey() (string, error)
-}
 
 type Coder interface {
 	Marshal(v interface{}) ([]byte, error)
@@ -47,7 +41,7 @@ type Store interface {
 }
 
 // errors
-var ErrCacheMiss = fmt.Errorf("cache miss")
+var ErrCacheMiss = errors.New("cache miss")
 
 type Cache struct {
 	store Store
@@ -91,58 +85,16 @@ func (c *Cache) Read(key string, v interface{}) error {
 	return err
 }
 
-// cachable
-
-type cacheCoder interface {
-	CacheCoder() Coder
-}
-
-func (c *Cache) cacheCoder(v Cachable) Coder {
-	if coder, ok := v.(cacheCoder); ok {
-		return coder.CacheCoder()
-	}
-
-	return c.coder
-}
-
-type cacheSubkeyer interface {
-	CacheSubkeys() []string
-}
-
-func (c *Cache) cacheSubkeys(v Cachable) []string {
-	if sub, ok := v.(cacheSubkeyer); ok {
-		return sub.CacheSubkeys()
-	}
-
-	return nil
-}
-
-type cacheExpirer interface {
-	CacheExpire() int64
-}
-
-func (c *Cache) cacheExpire(v Cachable, expires ...int64) int64 {
-	if len(expires) > 0 {
-		return expires[0]
-	}
-
-	if ex, ok := v.(cacheExpirer); ok {
-		return ex.CacheExpire()
-	}
-
-	return 0
-}
-
 func (c *Cache) Save(v Cachable, expires ...int64) error {
 	key, err := v.CacheKey()
 	if err != nil {
-		return errors.Wrap(err, "primary key is invalid")
+		return err
 	}
 
 	coder := c.cacheCoder(v)
 	data, err := coder.Marshal(v)
 	if err != nil {
-		return errors.Wrap(err, "marshal failed")
+		return err
 	}
 
 	pairs := Pairs{key: data}
@@ -154,7 +106,7 @@ func (c *Cache) Save(v Cachable, expires ...int64) error {
 	}
 
 	if err := c.store.Save(pairs, c.cacheExpire(v, expires...)); err != nil {
-		return errors.Wrap(err, "save data failed")
+		return err
 	}
 
 	return nil
@@ -175,12 +127,12 @@ func (c *Cache) Load(v Cachable) error {
 	if err != nil {
 		subkeys := c.cacheSubkeys(v)
 		if len(subkeys) == 0 {
-			return fmt.Errorf("key is not available neither primary key nor subkeys")
+			return errors.New("key is not available neither primary key nor subkeys")
 		}
 
 		pairs, err := c.store.Get(subkeys...)
 		if err != nil {
-			return errors.Wrap(err, "load key from subkeys failed")
+			return err
 		}
 
 		if key = dumpPrimaryKey(pairs); len(key) == 0 {
@@ -190,13 +142,13 @@ func (c *Cache) Load(v Cachable) error {
 
 	pairs, err := c.store.Get(key)
 	if err != nil {
-		return errors.Wrap(err, "load data by primary key failed")
+		return err
 	}
 
 	if data, ok := pairs.Get(key); ok {
 		coder := c.cacheCoder(v)
 		if err := coder.Unmarshal(data, v); err != nil {
-			return errors.Wrap(err, "unmarshal data failed")
+			return err
 		}
 
 		return nil
@@ -208,7 +160,7 @@ func (c *Cache) Load(v Cachable) error {
 func (c *Cache) Clean(v Cachable) error {
 	key, err := v.CacheKey()
 	if err != nil {
-		return errors.Wrap(err, "primary key is invalid")
+		return err
 	}
 
 	keys := append(c.cacheSubkeys(v), key)
