@@ -85,6 +85,10 @@ func (c *Cache) Read(key string, v interface{}) error {
 	return err
 }
 
+func (c *Cache) Delete(key string) error {
+	return c.store.Delete(key)
+}
+
 func (c *Cache) Save(v Cachable, expires ...int64) error {
 	key, err := v.CacheKey()
 	if err != nil {
