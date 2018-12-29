@@ -4,26 +4,32 @@ import (
 	"errors"
 )
 
+// Coder coder
 type Coder interface {
 	Marshal(v interface{}) ([]byte, error)
 	Unmarshal(data []byte, v interface{}) error
 }
 
+// Pairs store pairs
 type Pairs map[string][]byte
 
+// IsEmpty is empty
 func (pairs Pairs) IsEmpty() bool {
 	return len(pairs) == 0
 }
 
+// Set set
 func (pairs Pairs) Set(k string, v []byte) {
 	pairs[k] = v
 }
 
+// Get get
 func (pairs Pairs) Get(k string) ([]byte, bool) {
 	v, ok := pairs[k]
 	return v, ok
 }
 
+// Spread spread
 func (pairs Pairs) Spread() []interface{} {
 	args := make([]interface{}, 0, len(pairs)*2)
 	for k, v := range pairs {
@@ -33,6 +39,7 @@ func (pairs Pairs) Spread() []interface{} {
 	return args
 }
 
+// Store store interface
 type Store interface {
 	Save(pairs Pairs, expire int64) error
 	Get(keys ...string) (Pairs, error)
@@ -40,15 +47,17 @@ type Store interface {
 	Exists(key string) (bool, error)
 }
 
-// errors
+// ErrCacheMiss missed
 var ErrCacheMiss = errors.New("cache miss")
 
+// Cache cache
 type Cache struct {
 	store Store
 	// default coder used when no coder is specified
 	coder Coder
 }
 
+// New new cache
 func New(store Store, defaultCoder Coder) *Cache {
 	return &Cache{
 		store: store,
@@ -56,13 +65,60 @@ func New(store Store, defaultCoder Coder) *Cache {
 	}
 }
 
+// MultiWrite write multiple items
+func (c *Cache) MultiWrite(items map[string]interface{}, expires ...int64) error {
+	pairs := make(Pairs, len(items))
+	for key, v := range items {
+		data, err := c.coder.Marshal(v)
+		if err != nil {
+			return err
+		}
+		pairs[key] = data
+	}
+
+	var exoire int64
+	if len(expires) > 0 {
+		exoire = expires[0]
+	}
+
+	return c.store.Save(pairs, exoire)
+}
+
+// MultiRead read multiple items
+func (c *Cache) MultiRead(items map[string]interface{}) ([]interface{}, error) {
+	var keys = make([]string, 0, len(items))
+	for key := range items {
+		keys = append(keys, key)
+	}
+	pairs, err := c.store.Get(keys...)
+	if err != nil {
+		return nil, err
+	}
+
+	arr := make([]interface{}, 0, len(items))
+	for key, v := range items {
+		data, ok := pairs.Get(key)
+		if !ok {
+			continue
+		}
+
+		if err := c.coder.Unmarshal(data, v); err != nil {
+			return nil, err
+		}
+		arr = append(arr, v)
+	}
+
+	return arr, err
+}
+
+// Write write key value
 func (c *Cache) Write(key string, v interface{}, expires ...int64) error {
 	data, err := c.coder.Marshal(v)
 	if err != nil {
 		return err
 	}
 
-	var exoire int64 = 0
+	var exoire int64
 	if len(expires) > 0 {
 		exoire = expires[0]
 	}
@@ -85,10 +141,12 @@ func (c *Cache) Read(key string, v interface{}) error {
 	return err
 }
 
-func (c *Cache) Delete(key string) error {
-	return c.store.Delete(key)
+// Delete delete keys...
+func (c *Cache) Delete(keys ...string) error {
+	return c.store.Delete(keys...)
 }
 
+// Save save item
 func (c *Cache) Save(v Cachable, expires ...int64) error {
 	key, err := v.CacheKey()
 	if err != nil {
@@ -126,6 +184,7 @@ func dumpPrimaryKey(pairs Pairs) string {
 	return ""
 }
 
+// Load load item
 func (c *Cache) Load(v Cachable) error {
 	key, err := v.CacheKey()
 	if err != nil {
@@ -161,12 +220,18 @@ func (c *Cache) Load(v Cachable) error {
 	return ErrCacheMiss
 }
 
-func (c *Cache) Clean(v Cachable) error {
-	key, err := v.CacheKey()
-	if err != nil {
-		return err
-	}
+// Clean clean items
+func (c *Cache) Clean(vs ...Cachable) error {
+	var keys = make([]string, 0, len(vs))
+	for _, v := range vs {
+		key, err := v.CacheKey()
+		if err != nil {
+			return err
+		}
 
-	keys := append(c.cacheSubkeys(v), key)
+		keys = append(keys, key)
+		keys = append(keys, c.cacheSubkeys(v)...)
+
+	}
 	return c.store.Delete(keys...)
 }
