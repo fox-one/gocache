@@ -1,5 +1,6 @@
 package gocache
 
+// Cachable cachable
 type Cachable interface {
 	CacheKey() (string, error)
 }
