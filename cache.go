@@ -85,6 +85,8 @@ func (c *Cache) MultiWrite(items map[string]interface{}, expires ...int64) error
 }
 
 // MultiRead read multiple items
+// TODO bugfix
+//  Multi Read ALL will always return empty
 func (c *Cache) MultiRead(items map[string]interface{}) ([]interface{}, error) {
 	var keys = make([]string, 0, len(items))
 	for key := range items {

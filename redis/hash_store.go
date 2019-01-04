@@ -11,6 +11,8 @@ type hashStore struct {
 }
 
 // NewHashStore new redis hash store
+// TODO bugfix
+//  Multi Read ALL will always return empty
 func NewHashStore(pool *redis.Pool, key string) gocache.Store {
 	if pool == nil {
 		panic("pool is nil")
