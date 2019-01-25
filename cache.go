@@ -87,27 +87,24 @@ func (c *Cache) MultiWrite(items map[string]interface{}, expires ...int64) error
 // MultiRead read multiple items
 // TODO bugfix
 //  Multi Read ALL will always return empty
-func (c *Cache) MultiRead(items map[string]interface{}) ([]interface{}, error) {
-	var keys = make([]string, 0, len(items))
-	for key := range items {
-		keys = append(keys, key)
-	}
+func (c *Cache) MultiRead(newItemFunc func() interface{}, keys ...string) ([]interface{}, error) {
 	pairs, err := c.store.Get(keys...)
 	if err != nil {
 		return nil, err
 	}
 
-	arr := make([]interface{}, 0, len(items))
-	for key, v := range items {
+	arr := make([]interface{}, 0, len(keys))
+	for _, key := range keys {
 		data, ok := pairs.Get(key)
 		if !ok {
 			continue
 		}
 
-		if err := c.coder.Unmarshal(data, v); err != nil {
+		item := newItemFunc()
+		if err := c.coder.Unmarshal(data, item); err != nil {
 			return nil, err
 		}
-		arr = append(arr, v)
+		arr = append(arr, item)
 	}
 
 	return arr, err
