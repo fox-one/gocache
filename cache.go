@@ -101,10 +101,9 @@ func (c *Cache) MultiRead(newItemFunc func() interface{}, keys ...string) ([]int
 		}
 
 		item := newItemFunc()
-		if err := c.coder.Unmarshal(data, item); err != nil {
-			return nil, err
+		if err := c.coder.Unmarshal(data, item); err == nil {
+			arr = append(arr, item)
 		}
-		arr = append(arr, item)
 	}
 
 	return arr, err
