@@ -94,12 +94,7 @@ func (c *Cache) MultiRead(newItemFunc func() interface{}, keys ...string) ([]int
 	}
 
 	arr := make([]interface{}, 0, len(keys))
-	for _, key := range keys {
-		data, ok := pairs.Get(key)
-		if !ok {
-			continue
-		}
-
+	for _, data := range pairs {
 		item := newItemFunc()
 		if err := c.coder.Unmarshal(data, item); err == nil {
 			arr = append(arr, item)

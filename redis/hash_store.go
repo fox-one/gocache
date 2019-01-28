@@ -46,26 +46,38 @@ func (s *hashStore) Save(pairs gocache.Pairs, expire int64) error {
 	return err
 }
 
-// Get get items
-func (s *hashStore) Get(fields ...string) (gocache.Pairs, error) {
+func (s *hashStore) getAll() (gocache.Pairs, error) {
 	conn := s.pool.Get()
 	defer conn.Close()
 
-	var data [][]byte
-	var err error
-
-	if len(fields) == 0 {
-		data, err = redis.ByteSlices(conn.Do("HGETALL", s.key))
-	} else {
-		params := make([]interface{}, len(fields)+1)
-		params[0] = s.key
-		for idx, field := range fields {
-			params[idx+1] = field
-		}
-
-		data, err = redis.ByteSlices(conn.Do("HMGET", params...))
+	data, err := redis.ByteSlices(conn.Do("HGETALL", s.key))
+	if err != nil {
+		return nil, err
 	}
 
+	pairs := gocache.Pairs{}
+	for idx := 0; idx < len(data); idx += 2 {
+		pairs.Set(string(data[idx]), data[idx+1])
+	}
+	return pairs, nil
+}
+
+// Get get items
+func (s *hashStore) Get(fields ...string) (gocache.Pairs, error) {
+	if len(fields) == 0 {
+		return s.getAll()
+	}
+
+	conn := s.pool.Get()
+	defer conn.Close()
+
+	params := make([]interface{}, len(fields)+1)
+	params[0] = s.key
+	for idx, field := range fields {
+		params[idx+1] = field
+	}
+
+	data, err := redis.ByteSlices(conn.Do("HMGET", params...))
 	if err != nil {
 		return nil, err
 	}
